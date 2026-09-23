@@ -1,0 +1,354 @@
+// Auto Vault — Module 11: Backend & Database Foundation
+// PostgreSQL schema covering every module built so far.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CUSTOMER
+  ADMIN
+  SALES_MANAGER
+  SALES_AGENT
+  ACCOUNTANT
+  INVENTORY_MANAGER
+  WORKSHOP_MANAGER
+}
+
+enum VehicleStatus {
+  IN_STOCK
+  IN_TRANSIT
+  RESERVED
+  SOLD
+}
+
+enum OrderStatus {
+  PAYMENT_PENDING
+  VEHICLE_ALLOCATED
+  EXPORT_PROCESSING
+  SHIPPED
+  ARRIVED_IN_GHANA
+  CUSTOMS_CLEARING
+  READY_FOR_COLLECTION
+  DELIVERED
+}
+
+enum PurchaseOption {
+  DEPOSIT
+  FULL_PAYMENT
+}
+
+enum PaymentMethod {
+  MOBILE_MONEY
+  BANK_TRANSFER
+  CARD
+}
+
+enum PaymentStatus {
+  PENDING
+  VERIFIED
+  FAILED
+}
+
+enum LeadStage {
+  NEW_LEAD
+  CONTACTED
+  INTERESTED
+  TEST_DRIVE
+  NEGOTIATION
+  DEPOSIT_PAID
+  SOLD
+  LOST
+}
+
+enum LeadSource {
+  WEBSITE
+  INSTAGRAM
+  FACEBOOK
+  WHATSAPP
+  REFERRAL
+  WALK_IN
+}
+
+enum FinanceStatus {
+  SUBMITTED
+  DOCUMENT_REVIEW
+  CREDIT_CHECK
+  APPROVED
+  DECLINED
+  DISBURSED
+}
+
+enum TradeStatus {
+  PENDING_VALUATION
+  OFFER_SENT
+  ACCEPTED
+  DECLINED
+}
+
+enum JobStatus {
+  BOOKED
+  CHECKED_IN
+  IN_PROGRESS
+  AWAITING_PARTS
+  QUALITY_CHECK
+  COMPLETED
+}
+
+enum ClaimStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  RESOLVED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  phone        String?
+  passwordHash String
+  role         Role     @default(CUSTOMER)
+  ghanaCardId  String?
+  createdAt    DateTime @default(now())
+
+  orders              Order[]
+  savedVehicles       SavedVehicle[]
+  financeApplications FinanceApplication[]
+  tradeIns            TradeIn[]
+  serviceBookings     ServiceBooking[]
+  warrantyClaims      WarrantyClaim[]
+  documents           Document[]
+  leadsAsAgent        Lead[]                @relation("AgentLeads")
+}
+
+model Vehicle {
+  // id is the same human-readable slug used throughout the frontend, e.g. "jetour-x70-plus"
+  id           String        @id
+  brand        String
+  model        String
+  year         Int
+  price        Int
+  type         String
+  fuel         String
+  transmission String
+  engine       String
+  drive        String
+  seats        Int
+  battery      String
+  range        String
+  charging     String
+  mileage      String
+  colour       String
+  status       VehicleStatus @default(IN_STOCK)
+  warranty     String
+  description  String
+  img          String
+  features     String[]
+  createdAt    DateTime      @default(now())
+
+  orders  Order[]
+  savedBy SavedVehicle[]
+}
+
+model SavedVehicle {
+  id        String   @id @default(cuid())
+  userId    String
+  vehicleId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id])
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+
+  @@unique([userId, vehicleId])
+}
+
+model Order {
+  id                 String         @id @default(cuid())
+  orderNo            String         @unique
+  userId             String
+  vehicleId          String
+  purchaseOption     PurchaseOption
+  vehiclePrice       Int
+  amountDue          Int
+  depositAmount      Int
+  amountPaid         Int            @default(0)
+  status             OrderStatus    @default(PAYMENT_PENDING)
+  customerName       String
+  customerPhone      String
+  customerEmail      String
+  ghanaCardId        String?
+  deliveryPreference String
+  deliveryAddress    String?
+  notes              String?
+  createdAt          DateTime       @default(now())
+
+  user     User      @relation(fields: [userId], references: [id])
+  vehicle  Vehicle   @relation(fields: [vehicleId], references: [id])
+  payments Payment[]
+  invoice  Invoice?
+  shipment Shipment?
+}
+
+model Payment {
+  id        String        @id @default(cuid())
+  reference String        @unique
+  orderId   String
+  amount    Int
+  method    PaymentMethod
+  status    PaymentStatus @default(VERIFIED)
+  createdAt DateTime      @default(now())
+
+  order Order @relation(fields: [orderId], references: [id])
+}
+
+model Invoice {
+  id          String   @id @default(cuid())
+  invoiceNo   String   @unique
+  orderId     String   @unique
+  totalAmount Int
+  paidAmount  Int
+  balance     Int
+  createdAt   DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id])
+}
+
+model Shipment {
+  id          String       @id @default(cuid())
+  orderId     String       @unique
+  vessel      String?
+  container   String?
+  origin      String       @default("China")
+  destination String       @default("Tema, Ghana")
+  eta         DateTime?
+  status      OrderStatus  @default(SHIPPED)
+
+  order Order @relation(fields: [orderId], references: [id])
+}
+
+model Lead {
+  id              String     @id @default(cuid())
+  leadNo          String     @unique
+  name            String
+  phone           String
+  vehicleInterest String
+  source          LeadSource
+  agentId         String?
+  stage           LeadStage  @default(NEW_LEAD)
+  value           Int
+  lastContact     DateTime?
+  nextFollowUp    DateTime?
+  notes           String?
+  createdAt       DateTime   @default(now())
+
+  agent User? @relation("AgentLeads", fields: [agentId], references: [id])
+}
+
+model FinanceApplication {
+  id             String        @id @default(cuid())
+  appNo          String        @unique
+  userId         String
+  vehicle        String
+  price          Int
+  downPayment    Int
+  loanAmount     Int
+  term           Int
+  rate           Float
+  monthlyPayment Int
+  employment     String?
+  employer       String?
+  occupation     String?
+  income         Int?
+  address        String?
+  status         FinanceStatus @default(SUBMITTED)
+  createdAt      DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model TradeIn {
+  id             String      @id @default(cuid())
+  tradeNo        String      @unique
+  userId         String
+  vehicleBrand   String
+  vehicleModel   String
+  vehicleYear    Int
+  mileage        Int?
+  condition      String?
+  regNumber      String?
+  estimatedLow   Int
+  estimatedValue Int
+  estimatedHigh  Int
+  status         TradeStatus @default(PENDING_VALUATION)
+  createdAt      DateTime    @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model ServiceBooking {
+  id            String    @id @default(cuid())
+  bookingNo     String    @unique
+  userId        String
+  vehicle       String
+  serviceType   String
+  preferredDate String?
+  preferredTime String?
+  notes         String?
+  status        JobStatus @default(BOOKED)
+  laborHours    Float     @default(1)
+  laborRate     Int       @default(180)
+  paid          Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+
+  user  User      @relation(fields: [userId], references: [id])
+  parts JobPart[]
+}
+
+model JobPart {
+  id               String @id @default(cuid())
+  serviceBookingId String
+  partCode         String
+  name             String
+  qty              Int
+  price            Int
+
+  serviceBooking ServiceBooking @relation(fields: [serviceBookingId], references: [id])
+}
+
+model WarrantyClaim {
+  id        String      @id @default(cuid())
+  claimNo   String      @unique
+  userId    String
+  vehicle   String
+  issue     String
+  orderNo   String?
+  status    ClaimStatus @default(SUBMITTED)
+  createdAt DateTime    @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Part {
+  code  String @id
+  name  String
+  stock Int
+  price Int
+}
+
+model Document {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  label     String
+  orderNo   String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
