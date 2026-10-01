@@ -202,7 +202,7 @@ model Payment {
   orderId   String
   amount    Int
   method    PaymentMethod
-  status    PaymentStatus @default(VERIFIED)
+  status    PaymentStatus @default(PENDING)
   createdAt DateTime      @default(now())
 
   order Order @relation(fields: [orderId], references: [id])

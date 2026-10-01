@@ -2,37 +2,79 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { genRef, jsonError } from '@/lib/api-helpers';
 import { paymentMethod } from '@/lib/mappings';
+import { initializePaystackTransaction } from '@/lib/paystack';
 
-// Public: pays the full outstanding amount on an order in one shot, matching the original
-// prototype checkout (deposit or full payment, whichever was chosen when the order was placed).
 export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => null);
-  if (!body?.orderNo || !body?.method) return jsonError('orderNo and method are required');
+  try {
+    const body = await req.json().catch(() => null);
 
-  const order = await prisma.order.findUnique({ where: { orderNo: body.orderNo } });
-  if (!order) return jsonError('Order not found', 404);
+    if (!body?.orderNo || !body?.method) {
+      return jsonError('orderNo and method are required');
+    }
 
-  const amount = order.amountDue - order.amountPaid;
-  if (amount <= 0) return jsonError('This order has already been paid');
+    const order = await prisma.order.findUnique({
+      where: {
+        orderNo: body.orderNo,
+      },
+    });
 
-  const reference = genRef('AVPAY');
-  const method = paymentMethod.fromLabel(body.method);
+    if (!order) {
+      return jsonError('Order not found', 404);
+    }
 
-  await prisma.payment.create({ data: { reference, orderId: order.id, amount, method, status: 'VERIFIED' } });
+    const amount = order.amountDue - order.amountPaid;
 
-  const updated = await prisma.order.update({
-    where: { id: order.id },
-    data: { amountPaid: { increment: amount }, status: order.status === 'PAYMENT_PENDING' ? 'VEHICLE_ALLOCATED' : order.status },
-  });
+    if (amount <= 0) {
+      return jsonError('This order has already been paid');
+    }
 
-  await prisma.invoice.upsert({
-    where: { orderId: order.id },
-    update: { paidAmount: updated.amountPaid, balance: Math.max(0, updated.vehiclePrice - updated.amountPaid) },
-    create: {
-      invoiceNo: `INV-${order.orderNo.replace('AV-', '')}`, orderId: order.id,
-      totalAmount: updated.vehiclePrice, paidAmount: updated.amountPaid, balance: Math.max(0, updated.vehiclePrice - updated.amountPaid),
-    },
-  });
+    const method = paymentMethod.fromLabel(body.method);
 
-  return NextResponse.json({ reference, amount, orderNo: order.orderNo });
+    const reference = genRef('AVPAY');
+
+    // Create the payment as PENDING.
+    // It becomes VERIFIED only after Paystack confirms payment.
+    await prisma.payment.create({
+      data: {
+        reference,
+        orderId: order.id,
+        amount,
+        method,
+        status: 'PENDING',
+      },
+    });
+
+    try {
+      const transaction = await initializePaystackTransaction({
+        email: order.customerEmail,
+        amount,
+        reference,
+        orderNo: order.orderNo,
+        customerName: order.customerName,
+        method,
+      });
+
+      return NextResponse.json({
+        success: true,
+        reference,
+        amount,
+        orderNo: order.orderNo,
+        authorizationUrl: transaction.data.authorization_url,
+        accessCode: transaction.data.access_code,
+      });
+    } catch (error) {
+      console.error('Paystack initialization failed:', error);
+
+      return jsonError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to initialize payment',
+        500
+      );
+    }
+  } catch (error) {
+    console.error('Payment initialization error:', error);
+
+    return jsonError('Unable to initialize payment', 500);
+  }
 }
