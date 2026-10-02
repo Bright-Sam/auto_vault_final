@@ -26,7 +26,8 @@ export default function PayPage({params}:{params:Promise<{orderNo:string}>}){
  };
  if(order===undefined)return <main className="empty"><h1>Loading order…</h1></main>;
  if(!order)return <main className="empty"><h1>Order not found</h1><Link href="/account" className="btn primary">Back to account</Link></main>;
- const amountDue=order.amountDue-order.paid;
+ const amountDue = order.price - order.paid;
+ const paymentAmount = order.amountDue;
  if (paid)
   return (
     <main className="confirmation">
@@ -42,7 +43,7 @@ export default function PayPage({params}:{params:Promise<{orderNo:string}>}){
 
       <div className="orderConfirmation">
         <span>AMOUNT PAID</span>
-        <strong>{money(amountDue)}</strong>
+        <strong>{money(paymentAmount)}</strong>
 
         <hr />
 
